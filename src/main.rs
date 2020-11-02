@@ -20,6 +20,7 @@ struct SensorGroup {
     sensor_avg: Option<f64>,
     sensor_max: Option<f64>,
     CoreTable: HashMap<String,Sensor>,
+    FanNames: Vec<String>,
 }
 
 #[derive(Deserialize,Debug,Serialize)]
@@ -81,7 +82,8 @@ fn get_sensors_from_cpuconfig(sensors_cfg: Result<Sensors, config::ConfigError>)
                 sensor_span: None,
                 sensor_avg: None,
                 sensor_max: None,
-                CoreTable: Default::default()
+                CoreTable: Default::default(),
+                FanNames: vec![]
             };
             for (name, mut sensor) in sensors.Sensors {
                 //sensors_table.CoreTable.insert(name, sensor);
@@ -95,7 +97,8 @@ fn get_sensors_from_cpuconfig(sensors_cfg: Result<Sensors, config::ConfigError>)
                 sensor_span: None,
                 sensor_avg: None,
                 sensor_max: None,
-                CoreTable: Default::default()
+                CoreTable: Default::default(),
+                FanNames: vec![]
             }
         },
     };
