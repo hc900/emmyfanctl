@@ -56,7 +56,7 @@ fn main() {
     //load settings
 
     let fans_cfg= fan_cfg.try_into::<Fans>();
-    let cpus_cfg = cpu_cfg.try_into::<SensorGroup>();
+    let cpus_cfg = cpu_cfg.try_into::<Sensors>();
     let my_fans = get_fans_from_fanconfig(fans_cfg);
     //let my_sensors = get_sensors_from_cpuconfig(cpus_cfg);
     if my_fans.Fans.is_empty()
