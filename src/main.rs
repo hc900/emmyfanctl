@@ -1,8 +1,9 @@
 use glob::glob;
-use std::{thread,time};
+use std::{thread, time, fs};
 use std::collections::HashMap;
 use serde::{Deserialize,Serialize};
 use toml;
+use std::fs::read;
 
 struct Sensor {
     path: String,
@@ -58,22 +59,45 @@ fn main() {
     }
     //load settings
     //let l = toml::to_string(cnf.get("Fans").unwrap()).unwrap();
+
     let fans_cfg= cnf.try_into::<Fans>();
-    match fans_cfg {
+    let my_fans = match fans_cfg {
         Ok(fans) => {
-            for (name,fan) in fans.Fans{
-                println!("{}",name);
+            let mut fans_table = Fans{
+                Fans: Default::default()
+            };
+            for (name,mut fan) in fans.Fans{
+
+                fan.max = match fan.max {
+                    Some(t) => Some(t),
+                    None => {
+                        //open file
+                        let fan_max = format!("{}max",fan.path);
+                        //read file
+                        let read_val = fs::read_to_string(fan_max).expect("Problem reading for max speed");
+                        //set max
+                        Some(read_val.trim().parse::<u16>().unwrap_or(500))
+
+                    },
+                };
+                fans_table.Fans.insert(name,fan);
+            }
+             //return fans
+            fans_table
+        },
+        Err(e) => {
+            println!("{}",e);
+            Fans {
+                Fans: Default::default()
             }
         },
-        Err(e) => println!("{}",e),
-    }
+    };
 
-    //let fans = .try_into::<HashMap<String,Fan>>();
-    //loop
-        //check temps
-        //average temps
-        //set new temps
-        //sleep
+    if my_fans.Fans.is_empty()
+    {
+        println!("Could not locate any fans in config files!");
+        return;
+    }
 
     let time = time::Duration::from_secs(5);
     loop {
