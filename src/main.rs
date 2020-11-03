@@ -1,4 +1,4 @@
-use glob::glob;
+use glob::{glob, Paths};
 use std::{thread, time, fs};
 use std::collections::HashMap;
 use serde::{Deserialize,Serialize};
@@ -12,6 +12,7 @@ struct Sensor {
     min: f64,
     max: f64,
     avg: f64,
+    div: Option<f64>,
 }
 
 #[derive(Deserialize,Debug,Serialize)]
@@ -51,54 +52,93 @@ fn main() {
     //read config file
     let mut fan_cfg = config::Config::default();
     let mut cpu_cfg = config::Config::default();
-    build_config(&mut fan_cfg, "/etc/macfanctld/*fans*");
-    build_config(&mut cpu_cfg, "/etc/macfanctld/*cpus*");
+    build_config(&mut fan_cfg, "/etc/emmyfanctld/*fans*");
+    build_config(&mut cpu_cfg, "/etc/emmyfanctld/*cpus*");
     //load settings
 
     let fans_cfg= fan_cfg.try_into::<Fans>();
     let cpus_cfg = cpu_cfg.try_into::<Sensors>();
     let my_fans = get_fans_from_fanconfig(fans_cfg);
-    //let my_sensors = get_sensors_from_cpuconfig(cpus_cfg);
+    let my_sensors = get_sensors_from_cpuconfig(cpus_cfg);
     if my_fans.Fans.is_empty()
     {
         println!("Could not locate any fans in config files!");
         return;
     }
 
+    if my_sensors.Sensors.is_empty()
+    {
+        println!("No Sensors are defined :(");
+    }
+
     let time = time::Duration::from_secs(5);
     loop {
+        for (key,value) in &my_sensors.Sensors
+        {
+            println!("Key {}",key);
+            for (name,sensor) in &value.CoreTable
+            {
+                println!("reading {} at {}.",name,sensor.path);
+                let mut file_list = glob(sensor.path.as_str()).unwrap();
+                let mut count = 0;
+                let mut min: f64 = 9999.0;
+                let mut max: f64 = -100.0;
+                let mut sum: f64 = 0.0;
+                for file in file_list
+                {
+                    match file {
+                        Ok(file_path) => sum = calculator_sensor_sum(sensor, &mut count, &mut sum, file_path),
+                        Err(e) => {
+                            println!("Couldn't unwrap! {}",e);
+                        }
+                    }
+                } //end loop
+                println!("Sum is {}, avg is {}",sum, sum / count as f64);
+            }
 
+        }
         thread::sleep(time);
     }
 
 }
 
+fn calculator_sensor_sum(sensor: &Sensor, mut count: &mut i32, sum: &f64, file_path: std::path::PathBuf) -> f64{
+    println!("Reading {}", file_path.to_str().unwrap());
+    let mut value_read = fs::read_to_string(file_path.to_str().unwrap()).unwrap();
+    let value_read_float = get_float_from_string(&mut count, &mut value_read);
+    let divisor = match sensor.div {
+        Some(div) => div,
+        None => 1.0f64,
+    };
+    let val = sum + (value_read_float / divisor);
+    val
+}
 
-fn get_sensors_from_cpuconfig(sensors_cfg: Result<Sensors, config::ConfigError>) -> SensorGroup {
+fn get_float_from_string(count: &mut i32, value_read: &mut String) -> f64 {
+    let value_read_float: f64 = match value_read.trim().parse::<f64>() {
+        Ok(tt) => {
+            *count = *count + 1;
+            tt
+        },
+        Err(ee) => {
+            println!("Failed to parse: {}", ee);
+            0.0f64
+        },
+    };
+    value_read_float
+}
+
+
+fn get_sensors_from_cpuconfig(sensors_cfg: Result<Sensors, config::ConfigError>) -> Sensors {
     let my_sensors =
     match sensors_cfg {
         Ok(sensors) => {
-            let mut sensors_table = SensorGroup {
-                sensor_span: None,
-                sensor_avg: None,
-                sensor_max: None,
-                CoreTable: Default::default(),
-                FanNames: vec![]
-            };
-            for (name, mut sensor) in sensors.Sensors {
-                //sensors_table.CoreTable.insert(name, sensor);
-            }
-            //return fans
-            sensors_table
+            sensors
         }
         Err(e) => {
             println!("{}", e);
-            SensorGroup {
-                sensor_span: None,
-                sensor_avg: None,
-                sensor_max: None,
-                CoreTable: Default::default(),
-                FanNames: vec![]
+            Sensors {
+                Sensors: Default::default()
             }
         },
     };
