@@ -1,5 +1,5 @@
 [package]
-name = "macfanctld"
+name = "emmyfanctl"
 version = "0.1.0"
 authors = ["hc <hc@emmybeararcades.com>"]
 edition = "2018"
