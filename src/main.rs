@@ -67,7 +67,7 @@ fn main() -> Result<(),std::io::Error>{
         println!("No Sensors are defined :(");
     }
 
-    let time = time::Duration::from_secs(5);
+    let time = time::Duration::from_secs(10);
     loop {
         for (key,value) in &my_sensors.sensors
         {
