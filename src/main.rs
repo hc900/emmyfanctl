@@ -3,7 +3,9 @@ use std::{thread, time, fs};
 use std::collections::HashMap;
 use serde::{Deserialize,Serialize};
 use std::fs::File;
-use std::io::Read;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::path::Path;
 
 #[derive(Deserialize,Debug,Serialize)]
 struct Sensor {
@@ -91,14 +93,54 @@ fn main() -> Result<(),std::io::Error>{
                 } //end loop
                 println!("Sum is {}, avg is {}",sum, sum / count as f64);
                 println!("Min: {}, Max: {}",min, max);
+
+                //check avg, if the avg temp is above what is desired, we should set fan speed to match
+                //check max, if it is >= 0, we need to really ramp up the fans
+                for fan in &value.fans {
+                    let current_fan = &my_fans.fans[fan];
+                    let out_max = match current_fan.max
+                    {
+                        Some(t) => t ,
+                        None => 1,
+                    };
+                    let mapped = map_values( max as i32,
+                                            sensor.min as i32, sensor.max as i32,
+                        current_fan.min as i32, out_max as i32);
+                    //let fan_rpm = (current_fan.min as f64 + ((1.0 / fan_span) * span as f64)) as u16;
+                    //println!("{} {} => {}",current_fan.path, span, fan_rpm);
+                    let output = format!("{}\n",mapped);
+                    let output_path = format!("{}min",current_fan.path);
+                    let manual_path = format!("{}manual",current_fan.path);
+                    println!("writing {} to  {}",output ,output_path);
+                    let mut fan_manual = OpenOptions::new().write(true).open(Path::new(manual_path.as_str()))?;
+                    let mut fan_output = OpenOptions::new().write(true).open(Path::new( output_path.as_str()))?;
+
+                    let fmres = fan_manual.write_all(b"0");
+                    match fmres {
+                        Ok(t) => print!(""),
+                        Err(t) => println!("Error writing to manual {}",t),
+                    }
+                    let fmres = fan_output.write_all(output.as_bytes());
+                    match fmres {
+                        Ok(t) => print!(""),
+                        Err(t) => println!("Error writing to fan {}",t),
+                    }
+                }
+
+
+
             }
 
         }
         thread::sleep(time);
     }
-    Ok(())
 }
 
+//thanks arduino
+fn map_values(x : i32, in_min: i32, in_max: i32, out_min: i32, out_max: i32) -> i32
+{
+    (x - in_min) * ((out_max - out_min) / (in_max - in_min)) + out_min
+}
 fn calculator_sensor_sum(sensor: &Sensor, mut count: &mut i32, sum: &mut f64, file_path: std::path::PathBuf, min: &mut f64, max: &mut f64) {
     println!("Reading {}", file_path.to_str().unwrap());
     let mut value_read = fs::read_to_string(file_path.to_str().unwrap()).unwrap();
