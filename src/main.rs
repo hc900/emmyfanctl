@@ -87,6 +87,7 @@ fn main() -> Result<(),std::io::Error>{
                             println!("Couldn't unwrap! {}",e);
                         }
                     }
+                    println!("LOOP Min: {}, Max: {}",min, max);
                 } //end loop
                 println!("Sum is {}, avg is {}",sum, sum / count as f64);
                 println!("Min: {}, Max: {}",min, max);
@@ -110,10 +111,10 @@ fn calculator_sensor_sum(sensor: &Sensor, mut count: &mut i32, sum: &mut f64, fi
     *sum = *sum + val;
 
     if val > *max {
-        *max = value_read_float;
+        *max = val;
     }
     if val < *min {
-        *min = value_read_float;
+        *min = val;
     }
 
 }
