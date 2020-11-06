@@ -4,8 +4,12 @@ use std::collections::HashMap;
 use serde::{Deserialize,Serialize};
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{Read, Write, ErrorKind};
 use std::path::Path;
+
+extern crate env_logger;
+extern crate pretty_env_logger;
+#[macro_use] extern crate log;
 
 #[derive(Deserialize,Debug,Serialize)]
 struct Sensor {
@@ -45,6 +49,8 @@ struct Fans {
 
 fn main() -> Result<(),std::io::Error>{
 
+    pretty_env_logger::init();
+
     //read config file
     let mut fan_cfg = config::Config::default();
     let mut cpu_cfg = config::Config::default();
@@ -58,23 +64,24 @@ fn main() -> Result<(),std::io::Error>{
     let my_sensors = get_sensors_from_cpuconfig(cpus_cfg);
     if my_fans.fans.is_empty()
     {
-        println!("Could not locate any fans in config files!");
-        return Err(std::io::Error::last_os_error());
+        error!("Could not locate any fans in config files!");
+        return Err(std::io::Error::new(ErrorKind::NotFound, "Fans were not found."))
     }
 
     if my_sensors.sensors.is_empty()
     {
-        println!("No Sensors are defined :(");
+        error!("No Sensors are defined");
+        return Err(std::io::Error::new(ErrorKind::NotFound, "Sensors were not found."))
     }
 
     let time = time::Duration::from_secs(10);
     loop {
         for (key,value) in &my_sensors.sensors
         {
-            println!("Key {}",key);
+            trace!("Key {}",key);
             for (name,sensor) in &value.table
             {
-                println!("reading {} at {}.",name,sensor.path);
+                debug!("reading {} at {}.",name,sensor.path);
                 let file_list = glob(sensor.path.as_str()).unwrap();
                 let mut count = 0;
                 /* min, max, sum for the group */
@@ -86,13 +93,13 @@ fn main() -> Result<(),std::io::Error>{
                     match file {
                         Ok(file_path) => calculator_sensor_sum(sensor, &mut count, &mut sum, file_path, &mut min, &mut max),
                         Err(e) => {
-                            println!("Couldn't unwrap! {}",e);
+                            error!("Couldn't unwrap! {}",e);
                         }
                     }
-                    println!("LOOP Min: {}, Max: {}",min, max);
+                    trace!("LOOP Min: {}, Max: {}",min, max);
                 } //end loop
-                println!("Sum is {}, avg is {}",sum, sum / count as f64);
-                println!("Min: {}, Max: {}",min, max);
+                trace!("Sum is {}, avg is {}",sum, sum / count as f64);
+                trace!("Min: {}, Max: {}",min, max);
 
                 //check avg, if the avg temp is above what is desired, we should set fan speed to match
                 //check max, if it is >= 0, we need to really ramp up the fans
@@ -108,22 +115,22 @@ fn main() -> Result<(),std::io::Error>{
                         current_fan.min as i32, out_max as i32);
                     //let fan_rpm = (current_fan.min as f64 + ((1.0 / fan_span) * span as f64)) as u16;
                     //println!("{} {} => {}",current_fan.path, span, fan_rpm);
-                    let output = format!("{}\n",mapped);
+                    let output = format!("{}",mapped);
                     let output_path = format!("{}min",current_fan.path);
                     let manual_path = format!("{}manual",current_fan.path);
-                    println!("writing {} to  {}",output ,output_path);
+                    debug!("writing {} to  {}",output ,output_path);
                     let mut fan_manual = OpenOptions::new().write(true).open(Path::new(manual_path.as_str()))?;
                     let mut fan_output = OpenOptions::new().write(true).open(Path::new( output_path.as_str()))?;
 
                     let fmres = fan_manual.write_all(b"0");
                     match fmres {
-                        Ok(t) => print!(""),
-                        Err(t) => println!("Error writing to manual {}",t),
+                        Ok(_t) => debug!("Successful Write!"),
+                        Err(t) => error!("Error writing to manual {}",t),
                     }
                     let fmres = fan_output.write_all(output.as_bytes());
                     match fmres {
-                        Ok(t) => print!(""),
-                        Err(t) => println!("Error writing to fan {}",t),
+                        Ok(_t) => debug!("Successful Write!"),
+                        Err(t) => error!("Error writing to fan {}",t),
                     }
                 }
 
@@ -142,7 +149,7 @@ fn map_values(x : i32, in_min: i32, in_max: i32, out_min: i32, out_max: i32) -> 
     (x - in_min) * ((out_max - out_min) / (in_max - in_min)) + out_min
 }
 fn calculator_sensor_sum(sensor: &Sensor, mut count: &mut i32, sum: &mut f64, file_path: std::path::PathBuf, min: &mut f64, max: &mut f64) {
-    println!("Reading {}", file_path.to_str().unwrap());
+    trace!("Reading {}", file_path.to_str().unwrap());
     let mut value_read = fs::read_to_string(file_path.to_str().unwrap()).unwrap();
     let value_read_float = get_float_from_string(&mut count, &mut value_read);
     let divisor = match sensor.div {
@@ -168,7 +175,7 @@ fn get_float_from_string(count: &mut i32, value_read: &mut String) -> f64 {
             tt
         },
         Err(ee) => {
-            println!("Failed to parse: {}", ee);
+            error!("Failed to parse: {}", ee);
             0.0f64
         },
     };
@@ -183,7 +190,7 @@ fn get_sensors_from_cpuconfig(sensors_cfg: Result<Sensors, config::ConfigError>)
             sensors
         }
         Err(e) => {
-            println!("{}", e);
+            error!("{}", e);
             Sensors {
                 sensors: Default::default()
             }
@@ -218,7 +225,7 @@ fn get_fans_from_fanconfig(fans_cfg: Result<Fans, config::ConfigError>) -> Fans 
             fans_table
         },
         Err(e) => {
-            println!("{}", e);
+            error!("{}", e);
             Fans {
                 fans: Default::default()
             }
@@ -239,11 +246,11 @@ fn build_config(cnf: &mut config::Config, path: &str) -> Result<u8,std::io::Erro
                     f.read_to_string(&mut buffer)?;
                     match cnf.merge(config::File::from_str(buffer.to_lowercase().as_str(),config::FileFormat::Toml))
                     {
-                        Ok(_t) => println!("Loaded config file!"),
-                        Err(_e) => println!("Failed to load {}",_e),
+                        Ok(_t) => debug!("Loaded config file!"),
+                        Err(_e) => error!("Failed to load {}",_e),
                     }
                 },
-            Err(_e) => println!(""),
+            Err(_e) => error!("Error loading settings: {}",_e),
         }
     }
     Ok(0xff)
